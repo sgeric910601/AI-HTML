@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian 教師日誌工具 (雙向同步版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Lora:ital,wght@0,500;0,600;1,500&display=swap');
+        
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fdfcf8; /* 暖米白背景 */
+            color: #57534e; /* 暖深灰文字 */
+        }
+        
+        h1, h2, h3 { font-family: 'Noto Sans TC', sans-serif; }
+
+        .btn-hover { transition: all 0.2s ease-in-out; }
+        .btn-hover:active { transform: scale(0.98); }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #fafaf9; }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+
+        .warm-shadow {
+            box-shadow: 0 4px 6px -1px rgba(120, 113, 108, 0.1), 0 2px 4px -1px rgba(120, 113, 108, 0.06);
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+    <!-- 頂部導航 -->
+    <header class="bg-white/80 backdrop-blur-sm border-b border-stone-200 z-10 flex-shrink-0">
+        <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-amber-600 rounded-lg flex items-center justify-center text-white text-xl shadow-sm">
+                    <i class="fas fa-feather-alt"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold text-stone-800 tracking-tight">Obsidian 教師日誌</h1>
+                    <p class="text-xs text-stone-500 flex items-center gap-1">
+                        <i class="fas fa-sync text-amber-500"></i> 雙向同步版
+                    </p>
+                </div>
+            </div>
+            <button onclick="clearAllData()" class="text-sm bg-stone-100 text-stone-600 px-4 py-2 rounded-full hover:bg-red-50 hover:text-red-600 border border-stone-200 btn-hover transition flex items-center gap-2">
+                <i class="fas fa-trash-alt"></i> 新的一天
+            </button>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="flex-1 overflow-hidden flex flex-col md:flex-row max-w-7xl mx-auto w-full p-4 gap-6">
+        
+        <!-- 左欄：教師工作區 -->
+        <section class="flex-1 flex flex-col bg-[#fffbf7] rounded-2xl border border-amber-100 warm-shadow overflow-hidden h-full">
+            <div class="bg-gradient-to-r from-amber-50 to-[#fffbf7] px-5 py-4 border-b border-amber-100 flex justify-between items-center sticky top-0 z-10">
+                <h2 class="font-bold text-amber-900 flex items-center gap-2 text-lg">
+                    <i class="fas fa-briefcase text-amber-600"></i> 教師工作區
+                </h2>
+            </div>
+            <div class="overflow-y-auto p-5 space-y-5 custom-scrollbar" id="teacher-col">
+                <!-- JS 動態生成內容 -->
+            </div>
+        </section>
+
+        <!-- 右欄：自我成長區 -->
+        <section class="flex-1 flex flex-col bg-[#fffdfc] rounded-2xl border border-rose-100 warm-shadow overflow-hidden h-full">
+            <div class="bg-gradient-to-r from-rose-50 to-[#fffdfc] px-5 py-4 border-b border-rose-100 flex justify-between items-center sticky top-0 z-10">
+                <h2 class="font-bold text-rose-900 flex items-center gap-2 text-lg">
+                    <i class="fas fa-heart text-rose-500"></i> 自我成長區
+                </h2>
+            </div>
+            <div class="overflow-y-auto p-5 space-y-5 custom-scrollbar" id="growth-col">
+                <!-- JS 動態生成內容 -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 底部生成區 -->
+    <footer class="bg-white border-t border-stone-200 p-5 z-20 shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+        <div class="max-w-7xl mx-auto flex flex-col gap-4">
+            <div class="flex gap-4">
+                <button onclick="generateMarkdown()" class="flex-1 bg-stone-700 hover:bg-stone-800 text-amber-50 font-bold py-3 px-6 rounded-xl shadow-md flex items-center justify-center gap-2 btn-hover tracking-wide">
+                    <i class="fas fa-magic"></i> 生成日誌
+                </button>
+                <button onclick="parseMarkdown()" class="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3 px-6 rounded-xl shadow-md flex items-center justify-center gap-2 btn-hover tracking-wide">
+                    <i class="fas fa-file-import"></i> 讀取日誌
+                </button>
+                <button onclick="copyToClipboard()" id="btn-copy" class="flex-1 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold py-3 px-6 rounded-xl shadow-sm flex items-center justify-center gap-2 btn-hover tracking-wide">
+                    <i class="fas fa-copy"></i> 複製 Markdown
+                </button>
+            </div>
+            <textarea id="result-box" class="w-full h-24 p-4 bg-stone-50 border border-stone-200 rounded-xl text-sm font-mono text-stone-600 focus:ring-2 focus:ring-stone-400 focus:border-stone-400 focus:outline-none resize-none transition" placeholder="點擊「生成日誌」後，Obsidian 格式的文字會顯示在這裡... 也可以貼上舊的日誌按「讀取」還原。"></textarea>
+        </div>
+    </footer>
+
+    <script>
+        // 定義區塊與分類邏輯
+        const leftSections = [
+            { id: 'contact_book', title: '1. 今日聯絡簿', type: 'list', icon: 'fa-book-open', reportCategory: 'log_teacher', prefix: '【聯絡簿】' },
+            { id: 'class_todo', title: '2. 班上待辦事項', type: 'task', icon: 'fa-clipboard-check', badge: 'Task', reportCategory: 'todo_teacher' },
+            { id: 'parent_contact', title: '3. 家長聯繫事項', type: 'task', icon: 'fa-comment-dots', badge: 'Contact', reportCategory: 'todo_teacher' },
+            { id: 'teaching_progress', title: '4. 教學進度', type: 'task', icon: 'fa-chalkboard-teacher', reportCategory: 'todo_teacher' },
+            { id: 'homework_correction', title: '5. 作業批改', type: 'task', icon: 'fa-highlighter', reportCategory: 'todo_teacher' },
+            { id: 'class_affairs', title: '6. 班務處理', type: 'task', icon: 'fa-users-cog', desc: '含時間', autoTime: true, reportCategory: 'todo_teacher' },
+            { id: 'counseling_record', title: '7. 輔導紀錄', type: 'list', icon: 'fa-user-clock', desc: '含時間', autoTime: true, reportCategory: 'log_teacher' },
+            { id: 'admin_tasks', title: '8. 行政交辦', type: 'task', icon: 'fa-file-signature', reportCategory: 'todo_teacher' },
+            { id: 'tomorrow_progress', title: '9-1. 明日進度規劃', type: 'list', icon: 'fa-tasks', reportCategory: 'tomorrow_sub', subTitle: '明日進度規劃' },
+            { id: 'tomorrow_affairs', title: '9-2. 明日班務規劃', type: 'list', icon: 'fa-users', reportCategory: 'tomorrow_sub', subTitle: '明日班務規劃' },
+            { id: 'tomorrow_contact', title: '9-3. 明日聯絡簿', type: 'list', icon: 'fa-address-book', reportCategory: 'tomorrow_sub', subTitle: '明日聯絡簿' },
+            { id: 'recent_reminders', title: '10. 近期提醒', type: 'list', icon: 'fa-bell', reportCategory: 'reminders' }
+        ];
+
+        const rightSections = [
+            { id: 'ex_steps', title: '1-1. 走路步數', type: 'list', icon: 'fa-walking', reportCategory: 'exercise_sub', label: '走路步數' },
+            { id: 'ex_calories', title: '1-2. 卡路里', type: 'list', icon: 'fa-fire', reportCategory: 'exercise_sub', label: '卡路里' },
+            { id: 'ex_mvpa', title: '1-3. 中高程度運動', type: 'list', icon: 'fa-stopwatch', reportCategory: 'exercise_sub', label: '中高程度運動' },
+            { id: 'weight_cardio', title: '2. 重訓/有氧', type: 'task', icon: 'fa-dumbbell', reportCategory: 'todo_personal' },
+            { id: 'reading', title: '3. 閱讀', type: 'task', icon: 'fa-book-reader', reportCategory: 'todo_personal' },
+            { id: 'thinking_notes', title: '4. 思考筆記', type: 'list', icon: 'fa-brain', reportCategory: 'log_personal', prefix: '【思考】' },
+            { id: 'notes', title: '5. 筆記', type: 'list', icon: 'fa-sticky-note', reportCategory: 'log_personal', prefix: '【筆記】' }
+        ];
+
+        const STORAGE_KEY = 'teacher_obsidian_data_v6'; // 更新 key
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            loadFromStorage();
+        });
+
+        // 渲染區塊
+        function renderSectionHTML(containerId, sections, savedData) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            const isLeft = containerId === 'teacher-col';
+            const themeClass = isLeft 
+                ? 'bg-white border-amber-100 hover:border-amber-200' 
+                : 'bg-white border-rose-100 hover:border-rose-200';
+            const iconColorClass = isLeft ? 'text-amber-500' : 'text-rose-400';
+            const btnClass = isLeft 
+                ? 'text-amber-600 bg-amber-50 hover:bg-amber-100 border-amber-200' 
+                : 'text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-200';
+            const badgeClass = isLeft
+                ? 'bg-amber-100 text-amber-700 border-amber-200'
+                : 'bg-rose-100 text-rose-700 border-rose-200';
+
+            sections.forEach(section => {
+                const sectionData = savedData[section.id] || [''];
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = `${themeClass} rounded-xl border p-4 transition duration-300 shadow-sm hover:shadow-md`;
+                wrapper.id = `sec-${section.id}`;
+
+                const headerHtml = `
+                    <div class="flex justify-between items-center mb-3 pb-2 border-b border-dashed border-stone-200">
+                        <h3 class="font-bold text-stone-700 text-sm flex items-center gap-2">
+                            <i class="fas ${section.icon} ${iconColorClass}"></i> ${section.title}
+                            ${section.badge ? `<span class="text-[10px] px-1.5 py-0.5 rounded border ${badgeClass}">${section.badge}</span>` : ''}
+                            ${section.desc ? `<span class="text-[10px] text-stone-400 font-normal ml-1">(${section.desc})</span>` : ''}
+                        </h3>
+                        <button onclick="addInput('${section.id}')" class="text-xs px-2 py-1 rounded transition border ${btnClass}">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                    <div id="inputs-${section.id}" class="space-y-2.5"></div>
+                `;
+                wrapper.innerHTML = headerHtml;
+                container.appendChild(wrapper);
+
+                const inputContainer = wrapper.querySelector(`#inputs-${section.id}`);
+                sectionData.forEach(text => {
+                    inputContainer.appendChild(createInputRow(section.id, text));
+                });
+            });
+        }
+
+        function createInputRow(sectionId, value = '') {
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 group animate-fade-in';
+            div.innerHTML = `
+                <div class="text-stone-300 text-[10px]"><i class="fas fa-circle"></i></div>
+                <input type="text" value="${value}" 
+                    class="flex-1 text-sm bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 focus:bg-white focus:border-stone-400 focus:ring-1 focus:ring-stone-300 outline-none transition text-stone-700 placeholder-stone-300"
+                    placeholder="輸入內容..." 
+                    oninput="saveToStorage()"
+                    onkeydown="handleEnter(event, '${sectionId}')">
+                <button onclick="removeInput(this)" class="text-stone-300 hover:text-rose-500 px-2 transition opacity-0 group-hover:opacity-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            `;
+            return div;
+        }
+
+        function getRoundedTime() {
+            const now = new Date();
+            let minutes = now.getMinutes();
+            let hours = now.getHours();
+            const roundedMinutes = Math.round(minutes / 10) * 10;
+            if (roundedMinutes === 60) {
+                minutes = 0;
+                hours += 1;
+                if (hours === 24) hours = 0;
+            } else {
+                minutes = roundedMinutes;
+            }
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} `;
+        }
+
+        function addInput(sectionId) {
+            const container = document.getElementById(`inputs-${sectionId}`);
+            let defaultValue = '';
+            const allSections = [...leftSections, ...rightSections];
+            const currentSection = allSections.find(s => s.id === sectionId);
+
+            if (currentSection && currentSection.autoTime) {
+                defaultValue = getRoundedTime();
+            }
+
+            const newRow = createInputRow(sectionId, defaultValue);
+            container.appendChild(newRow);
+            const input = newRow.querySelector('input');
+            input.focus();
+            if (defaultValue) {
+                input.setSelectionRange(defaultValue.length, defaultValue.length);
+            }
+            saveToStorage();
+        }
+
+        function removeInput(btn) {
+            const row = btn.parentElement;
+            const container = row.parentElement;
+            if (container.children.length === 1) {
+                row.querySelector('input').value = '';
+            } else {
+                row.remove();
+            }
+            saveToStorage();
+        }
+
+        function handleEnter(e, sectionId) {
+            if (e.key === 'Enter') addInput(sectionId);
+        }
+
+        function saveToStorage() {
+            const data = {};
+            [...leftSections, ...rightSections].forEach(sec => {
+                const inputs = document.querySelectorAll(`#inputs-${sec.id} input`);
+                data[sec.id] = Array.from(inputs).map(input => input.value);
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+
+        function loadFromStorage() {
+            const json = localStorage.getItem(STORAGE_KEY);
+            let savedData = {};
+            if (json) savedData = JSON.parse(json);
+            renderSectionHTML('teacher-col', leftSections, savedData);
+            renderSectionHTML('growth-col', rightSections, savedData);
+        }
+
+        function clearAllData() {
+            if(confirm('確定要開始新的一天嗎？這將清空所有欄位。')) {
+                localStorage.removeItem(STORAGE_KEY);
+                const emptyData = {};
+                renderSectionHTML('teacher-col', leftSections, emptyData);
+                renderSectionHTML('growth-col', rightSections, emptyData);
+                document.getElementById('result-box').value = '';
+            }
+        }
+
+        // --- Markdown 讀取/解析功能 (新功能) ---
+        function parseMarkdown() {
+            if (!confirm('確定要讀取下方日誌並覆蓋目前內容嗎？\n(建議先備份目前的內容以免遺失)')) return;
+
+            const text = document.getElementById('result-box').value;
+            if (!text.trim()) {
+                alert('下方日誌區是空的，無法讀取。');
+                return;
+            }
+
+            const allSections = [...leftSections, ...rightSections];
+            const newData = {}; 
+            allSections.forEach(s => newData[s.id] = []);
+
+            const lines = text.split('\n');
+            let currentSectionId = null;
+            let isReminders = false; 
+
+            const findSectionByTitle = (str) => allSections.find(s => str.includes(s.title) || (s.subTitle && str.includes(s.subTitle)));
+            const findSectionByLabel = (str) => allSections.find(s => s.label && str.includes(s.label + ':'));
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i];
+                let trimmed = line.trim();
+                if (!trimmed) continue;
+
+                // 判斷大標題
+                if (trimmed.startsWith('## **近期提醒**')) {
+                    isReminders = true;
+                    currentSectionId = 'recent_reminders';
+                    continue;
+                } else if (trimmed.startsWith('#') || trimmed.startsWith('##')) {
+                    isReminders = false;
+                    currentSectionId = null;
+                    continue;
+                }
+
+                // 判斷運動細項 (標籤: 數值)
+                if (trimmed.includes(':')) {
+                     const sec = findSectionByLabel(trimmed);
+                     if (sec) {
+                         const parts = trimmed.split(':');
+                         if (parts.length >= 2) {
+                             let val = parts.slice(1).join(':').trim();
+                             newData[sec.id].push(val);
+                         }
+                         continue;
+                     }
+                }
+
+                // 判斷區塊標題 (例如: - 2. 班上待辦事項)
+                const potentialTitleMatch = findSectionByTitle(trimmed);
+                if (potentialTitleMatch && (trimmed.startsWith('-') || trimmed.startsWith('*'))) {
+                    currentSectionId = potentialTitleMatch.id;
+                    continue;
+                }
+
+                // 判斷內容項目
+                if (currentSectionId || isReminders) {
+                    if (trimmed.startsWith('-') || trimmed.startsWith('*')) {
+                        let content = trimmed.replace(/^[-*]\s*/, '');
+                        if (content.startsWith('[ ]') || content.startsWith('[x]')) {
+                            content = content.replace(/^\[[ x]\]\s*/, '');
+                        }
+                        const currentSec = allSections.find(s => s.id === currentSectionId);
+                        if (currentSec && currentSec.prefix) {
+                            if (content.startsWith(currentSec.prefix)) {
+                                content = content.substring(currentSec.prefix.length).trim();
+                            }
+                        }
+                        if (content) newData[currentSectionId].push(content);
+                    }
+                }
+            }
+
+            renderSectionHTML('teacher-col', leftSections, newData);
+            renderSectionHTML('growth-col', rightSections, newData);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(newData));
+            alert('日誌讀取完成！');
+        }
+
+        // --- Markdown 生成功能 ---
+        function generateMarkdown() {
+            const today = new Date().toISOString().split('T')[0];
+            let md = `# 📅 教師日誌 - ${today}\n\n`;
+
+            md += `### 代辦清單\n`;
+            md += `- **教師工作**\n`;
+            md += getCategorizedList('todo_teacher', 1);
+            md += `- **個人區**\n`;
+            md += `\t- [ ] 基本運動量\n`; 
+            md += getExerciseSubContent(2); 
+            md += getCategorizedList('todo_personal', 1);
+
+            md += `## **今日事記**\n`;
+            md += `### 教學日誌\n`; 
+            md += getCategorizedList('log_teacher', 0); 
+            md += `### 個人成長\n`;
+            md += getCategorizedList('log_personal', 0);
+
+            md += `## **明日規劃**\n`;
+            md += getTomorrowSubContent();
+
+            md += `## **近期提醒**\n`;
+            md += getCategorizedList('reminders', 0, false); 
+
+            document.getElementById('result-box').value = md;
+        }
+
+        function getCategorizedList(category, indentLevel, showHeader = true) {
+            let content = '';
+            const allSections = [...leftSections, ...rightSections];
+            const targetSections = allSections.filter(s => s.reportCategory === category);
+            const tabs = '\t'.repeat(indentLevel);
+
+            targetSections.forEach(sec => {
+                const inputs = document.querySelectorAll(`#inputs-${sec.id} input`);
+                let sectionContent = '';
+                let hasItems = false;
+
+                inputs.forEach(input => {
+                    let val = input.value.trim();
+                    if (val) {
+                        if (sec.prefix && !val.startsWith('【')) {
+                            val = `${sec.prefix} ${val}`; 
+                        }
+                        let bullet = sec.type === 'task' ? '- [ ]' : '-';
+                        sectionContent += `${tabs}${showHeader ? '\t' : ''}${bullet} ${val}\n`;
+                        hasItems = true;
+                    }
+                });
+
+                if (hasItems) {
+                    if (showHeader) {
+                        let titlePrefix = sec.type === 'task' ? '-' : '-'; 
+                        content += `${tabs}${titlePrefix} ${sec.title}\n`;
+                    }
+                    content += sectionContent;
+                }
+            });
+            return content;
+        }
+
+        function getExerciseSubContent(indentLevel) {
+            let content = '';
+            const exSections = rightSections.filter(s => s.reportCategory === 'exercise_sub');
+            const tabs = '\t'.repeat(indentLevel);
+            
+            exSections.forEach(sec => {
+                const inputs = document.querySelectorAll(`#inputs-${sec.id} input`);
+                inputs.forEach(input => {
+                    let val = input.value.trim();
+                    if (val) {
+                        content += `${tabs}- ${sec.label}: ${val}\n`;
+                    }
+                });
+            });
+            return content;
+        }
+
+        function getTomorrowSubContent() {
+            let content = '';
+            const subSections = leftSections.filter(s => s.reportCategory === 'tomorrow_sub');
+
+            subSections.forEach(sec => {
+                content += `- ${sec.subTitle}\n`;
+                const inputs = document.querySelectorAll(`#inputs-${sec.id} input`);
+                inputs.forEach(input => {
+                    let val = input.value.trim();
+                    if (val) {
+                        content += `\t- ${val}\n`;
+                    }
+                });
+            });
+            return content;
+        }
+
+        function copyToClipboard() {
+            const copyText = document.getElementById("result-box");
+            if (!copyText.value) generateMarkdown();
+            copyText.select();
+            copyText.setSelectionRange(0, 99999);
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    const btn = document.getElementById('btn-copy');
+                    const originalHTML = btn.innerHTML;
+                    btn.innerHTML = `<i class="fas fa-check"></i> 複製完成`;
+                    btn.className = "flex-1 bg-stone-600 text-white font-bold py-3 px-6 rounded-xl shadow-sm flex items-center justify-center gap-2 transition";
+                    setTimeout(() => {
+                        btn.innerHTML = originalHTML;
+                        btn.className = "flex-1 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold py-3 px-6 rounded-xl shadow-sm flex items-center justify-center gap-2 btn-hover tracking-wide";
+                    }, 2000);
+                } else {
+                    alert('無法自動複製，請手動複製下方的內容。');
+                }
+            } catch (err) {
+                console.error("複製失敗:", err);
+                alert('無法自動複製，請手動複製下方的內容。');
+            }
+        }
+    </script>
+</body>
+</html>
