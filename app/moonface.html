@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>月相變化與地面觀察模擬</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        /* 自定義滑桿樣式 */
+        input[type=range] {
+            -webkit-appearance: none; 
+            background: transparent; 
+        }
+        
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: currentColor;
+            cursor: pointer;
+            margin-top: -8px; 
+            box-shadow: 0 0 2px rgba(0,0,0,0.5);
+        }
+        
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 4px;
+        }
+        
+        /* 隱藏捲軸但保持功能 */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 確保 SVG 模糊效果在 Safari/Mobile 上運作 */
+        .blur-sun {
+            filter: blur(20px);
+        }
+        
+        /* 月球光暈特效 - 針對容器的外發光 */
+        .moon-container-glow {
+            filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.8));
+        }
+
+        /* 網格文字陰影，確保在不同背景色下可見 */
+        .grid-text {
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            font-family: 'Courier New', Courier, monospace; /* 等寬字體讓數字對齊更好看 */
+        }
+        
+        /* 地面文字樣式 */
+        .ground-text {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans h-screen w-full overflow-hidden flex flex-col md:flex-row">
+
+    <!-- 左側/中間主要顯示區 -->
+    <div class="flex-1 flex flex-col h-full relative">
+        
+        <!-- 1. 中間上面：地表視角 (Horizon View - Cylindrical Projection) -->
+        <div id="sky-container" class="flex-1 relative overflow-hidden transition-colors duration-75">
+            
+            <!-- 標題與資訊 -->
+            <div class="absolute top-4 left-4 text-white/90 z-10 bg-black/30 p-3 rounded backdrop-blur-sm select-none border border-white/10 shadow-lg">
+                <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="eye" size="18"></i> 地面觀察模擬</h2>
+                <p class="text-xs opacity-80 mt-1 font-mono">緯度: 23.5°N | 方位角範圍: 60°(東北東) ~ 300°(西北西)</p>
+            </div>
+
+            <!-- 座標網格系統 (Grid System) - 將由 JS 動態生成 -->
+            <div class="absolute inset-0 z-0 pointer-events-none">
+                <!-- 修正：將 height 改為 100%，確保網格座標與整個容器對齊 -->
+                <svg id="grid-svg" width="100%" height="100%" class="absolute top-0 left-0 opacity-50"></svg>
+            </div>
+
+            <!-- 太陽 (地表) -->
+            <div id="sun-sky-group" class="absolute" style="display: none; transform: translate(-50%, -50%); z-index: 5;">
+                <div class="w-24 h-24 rounded-full bg-yellow-400 blur-sun opacity-60"></div>
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white shadow-[0_0_30px_rgba(255,200,50,1)] flex items-center justify-center">
+                     <span class="text-[10px] text-orange-900 font-bold">日</span>
+                </div>
+            </div>
+
+            <!-- 星空背景 -->
+            <div id="stars" class="absolute inset-0 opacity-0 pointer-events-none transition-opacity duration-1000" 
+                 style="background-image: radial-gradient(white 1.5px, transparent 1.5px); background-size: 100px 100px; z-index: 1;">
+            </div>
+
+            <!-- 月亮容器 (地表) -->
+            <div id="moon-sky-container" class="absolute" style="display: none; z-index: 10;">
+                <!-- 內部旋轉容器：負責處理視差角 (Parallactic Angle) -->
+                <div id="moon-rotation-wrapper" class="transition-transform duration-300 ease-out">
+                    <!-- 月相 SVG (尺寸縮小至 50x50) -->
+                    <svg width="50" height="50" viewBox="0 0 100 100" class="moon-container-glow">
+                        <defs>
+                            <filter id="terminator-blur">
+                                <feGaussianBlur in="SourceGraphic" stdDeviation="4" />
+                            </filter>
+                            <mask id="moon-mask-dynamic">
+                                <rect x="0" y="0" width="100" height="100" fill="black" />
+                                <path id="moon-phase-path" d="" fill="white" filter="url(#terminator-blur)" />
+                                <!-- 修正邊緣溢出 -->
+                                <circle cx="50" cy="50" r="46" stroke="black" stroke-width="6" fill="none"/> 
+                            </mask>
+                            <clipPath id="moon-circle-clip">
+                                <circle cx="50" cy="50" r="48" />
+                            </clipPath>
+                        </defs>
+                        <g clip-path="url(#moon-circle-clip)">
+                             <!-- 1. 真實月球貼圖：增加亮度，降低對比 -->
+                             <image 
+                                href="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/FullMoon2010.jpg/480px-FullMoon2010.jpg" 
+                                x="0" y="0" height="100" width="100"
+                                preserveAspectRatio="xMidYMid slice"
+                                mask="url(#moon-mask-dynamic)"
+                                style="filter: brightness(1.6) contrast(0.8);"
+                             />
+                             <!-- 2. 白色半透明疊加層：增加發光感，進一步柔化 -->
+                             <circle cx="50" cy="50" r="48" fill="white" opacity="0.2" mask="url(#moon-mask-dynamic)" />
+                        </g>
+                    </svg>
+                </div>
+                
+                <!-- 仰角/方位角 資訊標籤 (不隨月球旋轉) -->
+                <!-- 修正：中文標籤 -->
+                <div id="moon-info-label" class="absolute top-full left-1/2 -translate-x-1/2 mt-2 text-[10px] text-white bg-black/60 px-3 py-1.5 rounded whitespace-nowrap font-mono border border-white/20 backdrop-blur-sm text-left leading-relaxed shadow-xl">
+                    高度角: 45°<br>方位角: 180°<br>方位: 正南
+                </div>
+            </div>
+
+            <!-- 地景 (遮擋在地平線以下的天體 - 改回草皮樣式) -->
+            <div class="absolute bottom-0 w-full h-[15%] bg-emerald-900 z-20 pointer-events-none shadow-[0_-5px_20px_rgba(0,0,0,0.5)] flex items-center justify-center border-t border-white/10">
+                <!-- 漸層模擬地平線與草地 -->
+                <div class="absolute inset-0 bg-gradient-to-t from-emerald-950 via-emerald-900 to-emerald-800"></div>
+                <!-- 簡單的草地紋理暗示 -->
+                <div class="absolute inset-0 opacity-20" style="background-image: linear-gradient(0deg, transparent 24%, rgba(255, 255, 255, .05) 25%, rgba(255, 255, 255, .05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .05) 75%, rgba(255, 255, 255, .05) 76%, transparent 77%, transparent), linear-gradient(90deg, transparent 24%, rgba(255, 255, 255, .05) 25%, rgba(255, 255, 255, .05) 26%, transparent 27%, transparent 74%, rgba(255, 255, 255, .05) 75%, rgba(255, 255, 255, .05) 76%, transparent 77%, transparent); background-size: 50px 50px;"></div>
+            </div>
+        </div>
+
+        <!-- 2. 中間下面：太空俯視圖 (Space View) -->
+        <div class="h-[40%] bg-slate-950 relative border-t border-slate-700 overflow-hidden shrink-0">
+            <div class="absolute top-4 left-4 text-white/90 z-10 bg-slate-800/50 p-2 rounded border border-slate-600 select-none">
+                <h2 class="text-lg font-bold flex items-center gap-2"><i data-lucide="sun" size="18"></i> 太空俯視圖</h2>
+                <p class="text-xs text-slate-300">北極上空視角 | 光源：右側固定</p>
+            </div>
+
+            <div class="w-full h-full flex items-center justify-center relative">
+                <!-- 太陽光方向提示 -->
+                <div class="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-yellow-500/10 to-transparent pointer-events-none"></div>
+                
+                <!-- 太陽 (右側外) -->
+                <div class="absolute right-[-60px] top-1/2 -translate-y-1/2 w-40 h-40 bg-yellow-500 rounded-full blur-2xl opacity-30 pointer-events-none"></div>
+
+                <!-- 軌道 -->
+                <div class="w-[240px] h-[240px] rounded-full border border-dashed border-slate-700 absolute pointer-events-none"></div>
+
+                <!-- 地球 -->
+                <div class="w-12 h-12 bg-blue-600 rounded-full relative shadow-[0_0_20px_rgba(59,130,246,0.4)] z-10">
+                    <div class="absolute inset-0 bg-gradient-to-l from-transparent via-black/60 to-black/90 rounded-full pointer-events-none"></div>
+                    <div id="earth-observer" class="absolute w-full h-full transition-transform duration-75">
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 w-3 h-3 bg-red-500 border border-white rounded-full z-20 shadow-sm"></div>
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-[150%] text-[10px] text-white bg-red-600/80 px-1 rounded whitespace-nowrap select-none backdrop-blur-[2px]">你</div>
+                    </div>
+                </div>
+
+                <!-- 月球軌道容器 -->
+                <div id="moon-orbit-container" class="absolute w-[240px] h-[240px] transition-transform duration-75 pointer-events-none flex items-center justify-end">
+                    <div id="moon-body-counter-rotate" class="w-8 h-8 rounded-full bg-stone-300 shadow-lg relative -mr-4 transition-transform duration-75">
+                        <div class="absolute inset-0 rounded-full bg-gradient-to-l from-transparent via-black/60 to-black overflow-hidden"></div>
+                        <span class="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] text-stone-400 font-mono">Moon</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 右邊欄位：控制面板 -->
+    <div class="w-full md:w-80 bg-white border-l border-slate-200 p-6 flex flex-col gap-6 shadow-xl z-30 overflow-y-auto no-scrollbar shrink-0">
+        <div>
+            <h1 class="text-xl font-bold text-slate-800">月相變化模擬器</h1>
+            <p class="text-slate-500 text-xs mt-1">天文物理投影版 v2.7 (中文介面優化)</p>
+        </div>
+
+        <!-- 農曆控制器 -->
+        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-indigo-700 font-bold">
+                    <i data-lucide="calendar" size="18"></i>
+                    <span class="text-sm">農曆日期</span>
+                    <!-- 農曆播放按鈕 -->
+                    <button id="lunar-play-btn" class="p-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full transition-colors ml-1 focus:outline-none focus:ring-2 focus:ring-indigo-400" title="自動播放農曆">
+                        <i id="lunar-play-icon" data-lucide="play" size="14" class="fill-current"></i>
+                    </button>
+                </div>
+                <span id="lunar-day-display" class="text-xl font-mono font-bold text-indigo-600">15</span>
+            </div>
+            <input id="lunar-input" type="range" min="1" max="30" step="0.5" value="15" class="w-full text-indigo-600">
+            <div class="flex justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                <span>New Moon</span>
+                <span>Full Moon</span>
+                <span>New Moon</span>
+            </div>
+            <div class="p-2 bg-indigo-100/50 text-indigo-900 text-xs rounded text-center border border-indigo-100">
+                <p id="phase-name-display" class="font-bold">滿月 (Full Moon)</p>
+            </div>
+        </div>
+
+        <!-- 時間控制器 -->
+        <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2 text-orange-700 font-bold">
+                    <i data-lucide="clock" size="18"></i>
+                    <span class="text-sm">觀測時間</span>
+                    <!-- 時間播放按鈕 -->
+                    <button id="time-play-btn" class="p-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-full transition-colors ml-1 focus:outline-none focus:ring-2 focus:ring-orange-400" title="自動播放時間">
+                        <i id="time-play-icon" data-lucide="play" size="14" class="fill-current"></i>
+                    </button>
+                </div>
+                <span id="time-display" class="text-xl font-mono font-bold text-orange-600">20:00</span>
+            </div>
+            <input id="time-input" type="range" min="0" max="24" step="0.1" value="20" class="w-full text-orange-500">
+            <div class="flex justify-between text-[10px] text-slate-400 font-medium">
+                <span>00:00</span>
+                <span>12:00</span>
+                <span>24:00</span>
+            </div>
+            <div class="p-2 bg-orange-100/50 text-orange-900 text-xs rounded text-center border border-orange-100">
+                 <p id="sun-pos-debug">太陽高度角: -</p>
+            </div>
+        </div>
+
+        <!-- 說明卡片 -->
+        <div class="bg-slate-100 p-3 rounded-lg text-xs text-slate-600 space-y-2 border border-slate-200">
+            <h3 class="font-bold text-slate-800">美化更新：</h3>
+            <ul class="list-disc list-inside space-y-1 opacity-90">
+                <li><strong class="text-indigo-600">中文介面</strong>：座標與資訊標籤全面中文化。</li>
+                <li><strong class="text-emerald-700">方位標示</strong>：地面顯示 24 方位網格 (15°間隔)，標註正東、東南、正南等方位。</li>
+                <li><strong class="text-sky-600">詳細資訊</strong>：月球資訊增加「方位」欄位，顯示如「南南東」等 16 方位描述。</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const LATITUDE = 23.5;
+        const LAT_RAD = LATITUDE * Math.PI / 180;
+        
+        const lunarInput = document.getElementById('lunar-input');
+        const timeInput = document.getElementById('time-input');
+        const lunarDayDisplay = document.getElementById('lunar-day-display');
+        const timeDisplay = document.getElementById('time-display');
+        const phaseNameDisplay = document.getElementById('phase-name-display');
+        const sunPosDebug = document.getElementById('sun-pos-debug');
+        
+        const skyContainer = document.getElementById('sky-container');
+        const sunSkyGroup = document.getElementById('sun-sky-group');
+        const moonSkyContainer = document.getElementById('moon-sky-container');
+        const moonRotationWrapper = document.getElementById('moon-rotation-wrapper');
+        const moonPhasePath = document.getElementById('moon-phase-path');
+        const stars = document.getElementById('stars');
+        const moonInfoLabel = document.getElementById('moon-info-label');
+        const gridSvg = document.getElementById('grid-svg');
+        
+        const earthObserver = document.getElementById('earth-observer');
+        const moonOrbitContainer = document.getElementById('moon-orbit-container');
+        const moonBodyCounterRotate = document.getElementById('moon-body-counter-rotate');
+
+        // 播放控制元素
+        const lunarPlayBtn = document.getElementById('lunar-play-btn');
+        const timePlayBtn = document.getElementById('time-play-btn');
+        const lunarPlayIcon = document.getElementById('lunar-play-icon');
+        const timePlayIcon = document.getElementById('time-play-icon');
+
+        let lunarDay = 15;
+        let hour = 20;
+        
+        // 播放狀態變數
+        let isLunarPlaying = false;
+        let isTimePlaying = false;
+        let lunarInterval = null;
+        let timeInterval = null;
+
+        // --- 輔助函數：取得方位文字 ---
+        // 16 方位系統 (每個方位 22.5 度)
+        const directions16 = [
+            "正北", "北北東", "東北", "東北東", 
+            "正東", "東南東", "東南", "南南東", 
+            "正南", "南南西", "西南", "西南西", 
+            "正西", "西北西", "西北", "北北西"
+        ];
+
+        function getDirectionText(azimuth) {
+            // 正規化角度 0-360
+            let az = azimuth % 360;
+            if (az < 0) az += 360;
+            
+            // 計算索引 (四捨五入到最近的 22.5 度)
+            const index = Math.round(az / 22.5) % 16;
+            return directions16[index];
+        }
+
+        // --- 播放控制邏輯 ---
+
+        function toggleLunarPlay() {
+            isLunarPlaying = !isLunarPlaying;
+            if (isLunarPlaying) {
+                lunarPlayIcon.setAttribute('data-lucide', 'pause');
+                lucide.createIcons();
+                lunarInterval = setInterval(() => {
+                    lunarDay += 1;
+                    if (lunarDay > 30) lunarDay = 1;
+                    lunarInput.value = lunarDay;
+                    updateView();
+                }, 1000);
+            } else {
+                lunarPlayIcon.setAttribute('data-lucide', 'play');
+                lucide.createIcons();
+                clearInterval(lunarInterval);
+            }
+        }
+
+        function toggleTimePlay() {
+            isTimePlaying = !isTimePlaying;
+            if (isTimePlaying) {
+                timePlayIcon.setAttribute('data-lucide', 'pause');
+                lucide.createIcons();
+                timeInterval = setInterval(() => {
+                    hour += 1/60;
+                    if (hour >= 24) {
+                        hour = 0;
+                        lunarDay += 1;
+                        if (lunarDay > 30) lunarDay = 1;
+                        lunarInput.value = lunarDay;
+                    }
+                    timeInput.value = hour;
+                    updateView();
+                }, 10); 
+            } else {
+                timePlayIcon.setAttribute('data-lucide', 'play');
+                lucide.createIcons();
+                clearInterval(timeInterval);
+            }
+        }
+
+        lunarPlayBtn.addEventListener('click', toggleLunarPlay);
+        timePlayBtn.addEventListener('click', toggleTimePlay);
+
+
+        // --- 0. 動態生成網格 (Grid Generation) ---
+        function drawGrid() {
+            const azStart = 60, azEnd = 300, azStep = 15;
+            const altStart = 0, altEnd = 90, altStep = 10;
+            let svgContent = '';
+
+            // 水平線 (高度角)
+            // 0度在 85% 高度 (地平線), 90度在 5% 高度
+            for (let alt = altStart; alt <= altEnd; alt += altStep) {
+                const yPos = 85 - (alt / 90) * 80;
+                const opacity = (alt % 30 === 0) ? 0.6 : 0.3;
+                const strokeWidth = (alt === 0) ? 2 : 1;
+                
+                svgContent += `<line x1="0%" y1="${yPos}%" x2="100%" y2="${yPos}%" stroke="white" stroke-width="${strokeWidth}" opacity="${opacity}" />`;
+                if (alt % 30 === 0) {
+                     svgContent += `<text x="10" y="${yPos - 1}%" fill="white" font-size="10" class="grid-text" opacity="0.8">${alt}°</text>`;
+                }
+            }
+
+            // 垂直線 (方位角)
+            // 範圍 60 ~ 300, 跨度 240
+            const azSpan = azEnd - azStart;
+            for (let az = azStart; az <= azEnd; az += azStep) {
+                const xPos = ((az - azStart) / azSpan) * 100;
+                // 45度為主要刻度 (90, 135, 180...)
+                const isMain = (az % 45 === 0);
+                const opacity = isMain ? 0.6 : 0.2;
+                const strokeWidth = (az === 180) ? 2 : 1;
+                const dash = isMain ? "" : "stroke-dasharray='4 2'";
+                
+                // 網格線只畫到地平線 (85%)
+                svgContent += `<line x1="${xPos}%" y1="0%" x2="${xPos}%" y2="85%" stroke="white" stroke-width="${strokeWidth}" opacity="${opacity}" ${dash}/>`;
+                
+                // 地面方位文字 (在 85% 以下的草地區域)
+                if (az % 45 === 0) {
+                    let label = `${az}°`;
+                    if(az === 90) label = "正東 (90°)";
+                    if(az === 135) label = "東南";
+                    if(az === 180) label = "正南 (180°)";
+                    if(az === 225) label = "西南";
+                    if(az === 270) label = "正西 (270°)";
+                    
+                    // 特別樣式：中文方位，放在草皮上
+                    svgContent += `<text x="${xPos}%" y="92%" fill="white" font-size="12" class="grid-text ground-text" text-anchor="middle" opacity="0.9">${label}</text>`;
+                } else {
+                    // 輔助刻度數字
+                    if (az % 15 === 0) {
+                        // 僅顯示度數，字小一點
+                        svgContent += `<text x="${xPos}%" y="88%" fill="white" font-size="9" class="grid-text" text-anchor="middle" opacity="0.5">${az}°</text>`;
+                    }
+                }
+            }
+
+            gridSvg.innerHTML = svgContent;
+        }
+
+        // 天空顏色系統
+        const skyKeyframes = [
+            { h: 0,  top: [5, 10, 30],    bottom: [10, 15, 40] },
+            { h: 4,  top: [20, 20, 60],   bottom: [40, 30, 70] },
+            { h: 5.5, top: [60, 80, 150], bottom: [200, 100, 80] },
+            { h: 7,  top: [70, 150, 230], bottom: [160, 210, 255] },
+            { h: 12, top: [30, 100, 200], bottom: [100, 180, 255] },
+            { h: 17, top: [40, 100, 180], bottom: [180, 200, 150] },
+            { h: 18.5, top: [30, 40, 100], bottom: [220, 100, 50] },
+            { h: 20, top: [10, 15, 40],   bottom: [20, 30, 60] },
+            { h: 24, top: [5, 10, 30],    bottom: [10, 15, 40] }
+        ];
+
+        function interpolateColor(c1, c2, factor) {
+            return c1.map((v, i) => Math.round(v + (c2[i] - v) * factor));
+        }
+
+        function getSkyGradient(h) {
+            let idx = 0;
+            while (idx < skyKeyframes.length - 1 && skyKeyframes[idx + 1].h < h) idx++;
+            const k1 = skyKeyframes[idx];
+            const k2 = skyKeyframes[idx + 1] || skyKeyframes[0];
+            const range = k2.h - k1.h;
+            const factor = (h - k1.h) / range;
+            const topRGB = interpolateColor(k1.top, k2.top, factor);
+            const bottomRGB = interpolateColor(k1.bottom, k2.bottom, factor);
+            return `linear-gradient(to bottom, rgb(${topRGB.join(',')}), rgb(${bottomRGB.join(',')}))`;
+        }
+
+        function toRad(deg) { return deg * Math.PI / 180; }
+        function toDeg(rad) { return rad * 180 / Math.PI; }
+
+        function getHorizontalCoords(hourAngle, declination) {
+            const H = toRad(hourAngle);
+            const d = toRad(declination);
+            const p = LAT_RAD;
+            const sinAlt = Math.sin(p) * Math.sin(d) + Math.cos(p) * Math.cos(d) * Math.cos(H);
+            const altRad = Math.asin(sinAlt);
+            const y = Math.sin(d) * Math.cos(p) - Math.cos(d) * Math.sin(p) * Math.cos(H);
+            const x = -Math.cos(d) * Math.sin(H);
+            let azRad = Math.atan2(x, y);
+            if (azRad < 0) azRad += 2 * Math.PI;
+            return { altitude: toDeg(altRad), azimuth: toDeg(azRad) };
+        }
+
+        function getScreenPos(coords) {
+            const azMin = 60;
+            const azSpan = 240;
+            let az = coords.azimuth;
+            const xPercent = ((az - azMin) / azSpan) * 100;
+            const yPercent = 85 - (coords.altitude / 90) * 80;
+            return { x: xPercent, y: yPercent, visible: coords.altitude > -10 };
+        }
+
+        function updateView() {
+            lunarDayDisplay.textContent = lunarDay < 11 ? `初${Math.floor(lunarDay)}` : (lunarDay % 1 !== 0 ? lunarDay : Math.floor(lunarDay));
+            const h = Math.floor(hour);
+            const m = Math.floor((hour % 1) * 60);
+            timeDisplay.textContent = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+
+            // --- Space View ---
+            const moonOrbitDeg = ((lunarDay - 1) / 29.5) * 360;
+            const phaseCycle = (lunarDay - 1) / 29.5;
+            let phaseName = "普通月相";
+            if (phaseCycle < 0.05 || phaseCycle > 0.95) phaseName = "新月 (New Moon)";
+            else if (Math.abs(phaseCycle - 0.25) < 0.05) phaseName = "上弦月 (First Quarter)";
+            else if (Math.abs(phaseCycle - 0.5) < 0.05) phaseName = "滿月 (Full Moon)";
+            else if (Math.abs(phaseCycle - 0.75) < 0.05) phaseName = "下弦月 (Last Quarter)";
+            else if (phaseCycle < 0.5) phaseName = "盈凸/眉月";
+            else phaseName = "虧凸/殘月";
+            phaseNameDisplay.textContent = phaseName;
+            moonOrbitContainer.style.transform = `rotate(-${moonOrbitDeg}deg)`;
+            moonBodyCounterRotate.style.transform = `rotate(${moonOrbitDeg}deg)`;
+            const earthRot = -(hour - 12) * 15;
+            earthObserver.style.transform = `rotate(${earthRot}deg)`;
+
+            // --- Horizon View ---
+            const sunHA = (hour - 12) * 15;
+            const sunCoords = getHorizontalCoords(sunHA, 0);
+            const moonHA = sunHA - moonOrbitDeg;
+            const moonCoords = getHorizontalCoords(moonHA, 0);
+
+            const sunScreen = getScreenPos(sunCoords);
+            const moonScreen = getScreenPos(moonCoords);
+
+            // 更新太陽
+            if (sunScreen.visible && sunScreen.x > -20 && sunScreen.x < 120) {
+                sunSkyGroup.style.display = 'block';
+                sunSkyGroup.style.left = `${sunScreen.x}%`;
+                sunSkyGroup.style.top = `${sunScreen.y}%`;
+                sunPosDebug.textContent = `太陽: 方位角 ${Math.round(sunCoords.azimuth)}°, 高度角 ${Math.round(sunCoords.altitude)}°`;
+            } else {
+                sunSkyGroup.style.display = 'none';
+                sunPosDebug.textContent = `太陽在地平線下 (方位角 ${Math.round(sunCoords.azimuth)}°)`;
+            }
+
+            // 更新月亮
+            if (moonScreen.visible && moonScreen.x > -20 && moonScreen.x < 120) {
+                moonSkyContainer.style.display = 'block';
+                moonSkyContainer.style.left = `${moonScreen.x}%`;
+                moonSkyContainer.style.top = `${moonScreen.y}%`;
+                moonSkyContainer.style.transform = 'translate(-50%, -50%)'; 
+                
+                // 計算中文方位文字
+                const directionText = getDirectionText(moonCoords.azimuth);
+
+                moonInfoLabel.innerHTML = `高度角: ${Math.round(moonCoords.altitude)}°<br>方位角: ${Math.round(moonCoords.azimuth)}°<br>方位: ${directionText}`;
+
+                // --- 修正月球旋轉：使用視差角 (Parallactic Angle) ---
+                const moonHA_rad = toRad(moonHA);
+                const qRad = Math.atan2(Math.sin(moonHA_rad), Math.tan(LAT_RAD));
+                const qDeg = toDeg(qRad);
+                
+                moonRotationWrapper.style.transform = `rotate(${qDeg}deg)`;
+
+            } else {
+                moonSkyContainer.style.display = 'none';
+            }
+
+            // 月相形狀 Path
+            const cycle = (lunarDay - 1) / 29.5;
+            let pathD = "";
+            const r = 48;
+            const xRadius = r * Math.abs(Math.cos(cycle * Math.PI * 2));
+            
+            if (cycle <= 0.5) {
+                // 上半月 (亮面在右)
+                const largeArc = cycle > 0.25 ? 1 : 0;
+                pathD = `M 50,2 A 48,48 0 0 1 50,98 A ${xRadius},48 0 0 ${largeArc} 50,2`;
+            } else {
+                // 下半月 (亮面在左)
+                const largeArc = cycle < 0.75 ? 0 : 1;
+                pathD = `M 50,2 A 48,48 0 0 0 50,98 A ${xRadius},48 0 0 ${largeArc} 50,2`;
+            }
+            moonPhasePath.setAttribute('d', pathD);
+
+            skyContainer.style.background = getSkyGradient(hour);
+            if (hour > 19 || hour < 5) stars.style.opacity = 1;
+            else if (hour > 17 || hour < 6) stars.style.opacity = 0.5;
+            else stars.style.opacity = 0;
+        }
+
+        lunarInput.addEventListener('input', (e) => {
+            // 如果在播放中拖動，先暫停農曆播放
+            if(isLunarPlaying) toggleLunarPlay();
+            lunarDay = parseFloat(e.target.value);
+            updateView();
+        });
+
+        timeInput.addEventListener('input', (e) => {
+            // 如果在播放中拖動，先暫停時間播放
+            if(isTimePlaying) toggleTimePlay();
+            hour = parseFloat(e.target.value);
+            updateView();
+        });
+
+        // 首次繪製
+        drawGrid();
+        updateView();
+    </script>
+</body>
+</html>
