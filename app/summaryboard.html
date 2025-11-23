@@ -1,0 +1,733 @@
+
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>刪簡摘要練習工具</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* (V9/V11 樣式) 使用 3 個獨立的 CSS 變數控制字體大小 */
+        :root {
+            --font-original: 16px;
+            --font-manual: 16px;
+            --font-ai: 16px;
+        }
+
+        /* 基本頁面排版 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            line-height: 1.6;
+            background-color: #f4f7f6;
+            color: #333;
+            width: 95%; /* (Req 1) 寬度隨視窗延伸 */
+            max-width: 1200px; /* (Req 1) 設定最大寬度 */
+            margin: 20px auto;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        h1, h3, h4 {
+            color: #005a9c;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+        
+        h1 {
+            text-align: center; 
+        }
+
+        /* 上傳區塊 */
+        .upload-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap; 
+            gap: 15px;
+            background-color: #ffffff;
+            padding: 15px 20px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .upload-section p {
+            margin: 0;
+            flex-grow: 1;
+        }
+        #fileInput {
+            margin: 0;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            cursor: pointer;
+        }
+
+        /* 控制按鈕區塊 */
+        #controls {
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        /* 互動按鈕 (V1 樣式) */
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 按鈕樣式 (Req 1, 3, 4, 5) */
+        #highlightBtn {
+            background-color: #ffd700; 
+            color: #333;
+            font-weight: bold; 
+        }
+        #deleteBtn {
+            background-color: #dc3545; 
+            color: white;
+        }
+        #adornmentBtn {
+            background-color: #e0e0e0; 
+            color: #555;
+        }
+        #undoBtn {
+            background-color: #6c757d; 
+            color: white;
+            margin-left: auto; 
+        }
+        #resetBtn {
+            background-color: #343a40; 
+            color: white; 
+        }
+        
+        /* (Req 2) AI 生成按鈕 */
+        #aiGenerateBtn {
+            background-color: #007bff; /* 藍色 */
+            color: white;
+            margin: 0;
+        }
+        #generateSummaryBtn {
+            background-color: #28a745; /* 綠色 */
+            color: white;
+            margin: 0; 
+        }
+
+
+        /* 字體控制 */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .font-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .font-btn {
+            padding: 5px 12px;
+            font-size: 1.2em;
+            line-height: 1;
+            background-color: #f0f0f0;
+            color: #333;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .font-btn:hover {
+            background-color: #e0e0e0;
+        }
+        .font-display {
+            font-size: 16px;
+            font-weight: bold;
+            color: #555;
+            min-width: 45px;
+            text-align: center;
+        }
+
+        /* 文字顯示區 (原始文章 與 摘要區) */
+        .text-box {
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            width: 100%; 
+            box-sizing: border-box; 
+            /* (V9) 字體大小由各自的變數控制 */
+            min-height: 150px;
+            height: auto;
+        }
+
+        /* 原始文章區 */
+        #textContainer {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            min-height: 200px;
+            font-size: var(--font-original); /* (V9) */
+        }
+        
+        /* 隱藏 contenteditable 的游標和外框 */
+        #textContainer[contenteditable="true"]:focus {
+            outline: none;
+            box-shadow: 0 0 3px 2px rgba(0,123,255,0.25); 
+        }
+        #textContainer[contenteditable="true"] {
+            caret-color: transparent;
+        }
+        #textContainer[contenteditable="true"]::selection {
+            caret-color: auto;
+            background-color: #b4d5fe; 
+        }
+
+        /* 摘要區左右排版 */
+        #summaryGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            #summaryGrid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .summary-column h4 {
+            margin-top: 0;
+            font-size: 1.1em;
+        }
+        /* 摘要區標題和按鈕並排 */
+        .summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px; 
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+        .summary-header h4 {
+            margin: 0;
+            border: none;
+            padding: 0;
+        }
+        
+        /* 摘要輸入框 */
+        #summaryArea {
+            font-size: var(--font-manual); /* (V9) */
+            line-height: 1.5;
+            resize: none; 
+        }
+        #aiSummaryArea {
+            font-size: var(--font-ai); /* (V9) */
+            line-height: 1.5;
+            resize: none; 
+            background-color: #f9f9f9; 
+        }
+        
+        /* 核心 CSS 樣式 */
+        .highlight {
+            background-color: yellow;
+            font-weight: bold; 
+        }
+        .delete {
+            text-decoration: line-through double red;
+        }
+        .adornment {
+            color: #999; 
+            font-style: italic;
+        }
+        
+        /* 自訂訊息框樣式 */
+        #customMessageOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0,0,0,0.3);
+            z-index: 10000;
+            display: none; 
+        }
+        #customMessageModal {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background-color: white;
+            padding: 25px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            z-index: 10001;
+            max-width: 320px;
+            width: 80%;
+            text-align: center;
+            display: none; 
+            box-sizing: border-box;
+        }
+        #customMessageModal p {
+            margin: 0 0 20px 0;
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        #customMessageCloseBtn {
+            /* (V11) 隱藏預設的關閉按鈕，讓它自動關閉 */
+            display: none; 
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>刪簡摘要練習工具</h1>
+
+    <div class="upload-section">
+        <p>請上傳一篇純文字檔案 (.txt)，開始您的摘要練習。</p>
+        <input type="file" id="fileInput" accept=".txt">
+    </div>
+
+    <hr>
+
+    <!-- (V9) 原始段落 + 獨立ID的字體控制 -->
+    <div class="section-header">
+        <h3>1. 原始段落 (請用滑鼠選取文字)</h3>
+        <div class="font-controls" id="fontControlsOriginal">
+            <button class="font-btn" data-action="decrease" title="縮小字體">-</button>
+            <span class="font-display">16px</span>
+            <button class="font-btn" data-action="increase" title="放大字體">+</button>
+        </div>
+    </div>
+    
+    <div id="controls">
+        <button id="highlightBtn" class="btn">重要的詞</button>
+        <button id="deleteBtn" class="btn">不重要的內容</button>
+        <button id="adornmentBtn" class="btn">修飾用詞</button>
+        <button id="undoBtn" class="btn">上一步</button>
+        <button id="resetBtn" class="btn">重設標記</button>
+    </div>
+
+    <div id="textContainer" class="text-box" contenteditable="true">
+        請先上傳檔案...
+    </div>
+
+    <hr>
+
+    <h3>摘要</h3>
+    <div id="summaryGrid">
+        
+        <!-- 左欄：手動摘要 -->
+        <div class="summary-column">
+            <div class="summary-header">
+                <h4>您的手動摘要</h4>
+                <button id="generateSummaryBtn" class="btn">自動產生摘要</button>
+            </div>
+            <!-- (V9) 手動摘要 + 獨立ID的字體控制 -->
+            <div class="font-controls" id="fontControlsManual" style="justify-content: flex-end; margin-bottom: 10px;">
+                <button class="font-btn" data-action="decrease" title="縮小字體">-</button>
+                <span class="font-display">16px</span>
+                <button class="font-btn" data-action="increase" title="放大字體">+</button>
+            </div>
+            <textarea id="summaryArea" class="text-box" placeholder="您可以在這裡手動輸入，或點選「自動產生摘要」..."></textarea>
+        </div>
+        
+        <!-- 右欄：AI 摘要 -->
+        <div class="summary-column">
+            <div class="summary-header">
+                <h4>與AI摘要進行比較</h4>
+                <button id="aiGenerateBtn" class="btn">AI生成</button>
+            </div>
+            <!-- (V9) AI 摘要 + 獨立ID的字體控制 -->
+            <div class="font-controls" id="fontControlsAi" style="justify-content: flex-end; margin-bottom: 10px;">
+                <button class="font-btn" data-action="decrease" title="縮小字體">-</button>
+                <span class="font-display">16px</span>
+                <button class="font-btn" data-action="increase" title="放大字體">+</button>
+            </div>
+            <textarea id="aiSummaryArea" class="text-box" placeholder="點擊「AI生成」按鈕，AI 將會閱讀原始段落並產生一份摘要..." readonly></textarea>
+        </div>
+    </div>
+
+    <!-- 自訂訊息框 -->
+    <div id="customMessageOverlay"></div>
+    <div id="customMessageModal">
+        <p id="customMessageText"></p>
+        <button id="customMessageCloseBtn">確定</button>
+    </div>
+
+
+    <script>
+        // --- 變數 ---
+        let originalText = "";
+        let historyStack = [];
+        const MAX_HISTORY = 30; 
+        
+        // (V9) 獨立儲存三個區域的字體大小
+        let fontSizes = {
+            original: 16,
+            manual: 16,
+            ai: 16
+        };
+        
+        // --- 獲取元素 ---
+        const fileInput = document.getElementById('fileInput');
+        const textContainer = document.getElementById('textContainer');
+        
+        const highlightBtn = document.getElementById('highlightBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const adornmentBtn = document.getElementById('adornmentBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // (V9) 獲取 3 個獨立的字體控制項
+        const fontControlsOriginal = document.getElementById('fontControlsOriginal');
+        const fontControlsManual = document.getElementById('fontControlsManual');
+        const fontControlsAi = document.getElementById('fontControlsAi');
+        
+        // 摘要區
+        const summaryArea = document.getElementById('summaryArea');
+        const aiSummaryArea = document.getElementById('aiSummaryArea');
+        const generateSummaryBtn = document.getElementById('generateSummaryBtn');
+        const aiGenerateBtn = document.getElementById('aiGenerateBtn'); 
+        
+        // 訊息框
+        const messageOverlay = document.getElementById('customMessageOverlay');
+        const messageModal = document.getElementById('customMessageModal');
+        const messageText = document.getElementById('customMessageText');
+        const messageCloseBtn = document.getElementById('customMessageCloseBtn');
+
+        // --- 訊息框功能 ---
+        function showMessage(message) {
+            messageText.textContent = message;
+            messageOverlay.style.display = 'block';
+            messageModal.style.display = 'block';
+            
+            // (V11) 讓訊息框自動消失
+            setTimeout(closeModal, 1800);
+        }
+        function closeModal() {
+            messageOverlay.style.display = 'none';
+            messageModal.style.display = 'none';
+        }
+        messageCloseBtn.addEventListener('click', closeModal);
+        messageOverlay.addEventListener('click', closeModal); 
+
+        // --- "上一步" 功能 ---
+        function saveState() {
+            const currentState = textContainer.innerHTML;
+            if (historyStack.length === 0 || historyStack[historyStack.length - 1] !== currentState) {
+                historyStack.push(currentState);
+                if (historyStack.length > MAX_HISTORY) {
+                    historyStack.shift(); 
+                }
+            }
+        }
+        undoBtn.addEventListener('click', function() {
+            if (historyStack.length > 1) { 
+                historyStack.pop(); 
+                textContainer.innerHTML = historyStack[historyStack.length - 1]; 
+            } else {
+                showMessage("已經是最後一步了。");
+            }
+        });
+
+        // --- (V9) 獨立字體大小功能 ---
+        
+        /**
+         * 輔助函數：更新一個字體控制項
+         * @param {HTMLElement} controlGroup - .font-controls 的 DOM 元素
+         * @param {string} key - 'original', 'manual', 'ai'
+         * @param {number} delta - +2 或 -2
+         */
+        function updateSingleFontSize(controlGroup, key, delta) {
+            let currentSize = fontSizes[key];
+            let newSize = Math.max(10, Math.min(40, currentSize + delta));
+            fontSizes[key] = newSize;
+            
+            // 更新 CSS 變數
+            document.documentElement.style.setProperty(`--font-${key}`, `${newSize}px`);
+
+            // 更新顯示的數字
+            controlGroup.querySelector('.font-display').textContent = `${newSize}px`;
+
+            // 如果是 textarea，觸發自動增高
+            if (key === 'manual') {
+                autoGrowTextarea(summaryArea);
+            } else if (key === 'ai') {
+                autoGrowTextarea(aiSummaryArea);
+            }
+        }
+
+        // 綁定 3 組控制項
+        fontControlsOriginal.addEventListener('click', (e) => {
+            if (e.target.dataset.action === 'increase') updateSingleFontSize(fontControlsOriginal, 'original', 2);
+            if (e.target.dataset.action === 'decrease') updateSingleFontSize(fontControlsOriginal, 'original', -2);
+        });
+        
+        fontControlsManual.addEventListener('click', (e) => {
+            if (e.target.dataset.action === 'increase') updateSingleFontSize(fontControlsManual, 'manual', 2);
+            if (e.target.dataset.action === 'decrease') updateSingleFontSize(fontControlsManual, 'manual', -2);
+        });
+        
+        fontControlsAi.addEventListener('click', (e) => {
+            if (e.target.dataset.action === 'increase') updateSingleFontSize(fontControlsAi, 'ai', 2);
+            if (e.target.dataset.action === 'decrease') updateSingleFontSize(fontControlsAi, 'ai', -2);
+        });
+
+        // --- Textarea 自動增高 ---
+        function autoGrowTextarea(element) {
+            if (!element) return;
+            element.style.height = 'auto';
+            element.style.height = (element.scrollHeight) + 'px';
+        }
+        summaryArea.addEventListener('input', () => autoGrowTextarea(summaryArea));
+
+
+        // --- 功能 1: 讀取檔案 ---
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file && file.type === "text/plain") {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    originalText = e.target.result;
+                    textContainer.textContent = originalText; 
+                    
+                    summaryArea.value = "";
+                    aiSummaryArea.value = "";
+                    
+                    historyStack = [textContainer.innerHTML]; 
+                    
+                    autoGrowTextarea(summaryArea);
+                    autoGrowTextarea(aiSummaryArea);
+                };
+                reader.readAsText(file);
+            } else {
+                showMessage("請上傳 .txt 純文字檔案！");
+            }
+        });
+        
+        // --- 攔截鍵盤輸入 ---
+        textContainer.addEventListener('keydown', function(e) {
+            // 允許複製 (Ctrl+C / Cmd+C) 和全選 (Ctrl+A / Cmd+A)
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'a')) {
+                return;
+            }
+            // 允許方向鍵和選取鍵
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key)) {
+                return;
+            }
+            // 阻止所有其他按鍵
+            e.preventDefault();
+        });
+
+
+        // --- 功能 3: 標記功能 (V1 邏輯) ---
+        highlightBtn.addEventListener('click', () => applyMarking('highlight'));
+        deleteBtn.addEventListener('click', () => applyMarking('delete'));
+        adornmentBtn.addEventListener('click', () => applyMarking('adornment')); 
+
+        function applyMarking(className) {
+            const selection = window.getSelection();
+            // 檢查是否有選取，且選取的不是一個點 (isCollapsed)
+            if (!selection.rangeCount || selection.isCollapsed) {
+                showMessage("請先在原始段落中選取您要標記的文字。");
+                return; 
+            }
+            const range = selection.getRangeAt(0);
+            // 檢查選取範圍是否在我們的文字容器內
+            if (!textContainer.contains(range.commonAncestorContainer)) {
+                showMessage("請在「1. 原始段落」的框格中選取文字。");
+                selection.removeAllRanges(); 
+                return; 
+            }
+            
+            saveState(); // 儲存標記前的狀態
+            
+            const span = document.createElement('span');
+            span.className = className;
+            
+            try {
+                // 這會將選取的文字內容 "移出" 到 span 中
+                span.appendChild(range.extractContents());
+                // 再將帶有樣式的 span "插入" 回原本的位置
+                range.insertNode(span);
+            } catch (e) {
+                console.error("標記時發生錯誤:", e);
+                showMessage("標記失敗。請嘗試選取更簡單的文字範圍（例如避免跨段落標記）。");
+                undoBtn.click(); // 如果失敗，自動執行上一步
+            }
+            
+            selection.removeAllRanges(); // 清除選取狀態
+        }
+
+        // --- 重設功能 ---
+        resetBtn.addEventListener('click', function() {
+            if (originalText) {
+                saveState();
+                textContainer.textContent = originalText;
+                summaryArea.value = ""; 
+                aiSummaryArea.value = ""; 
+                saveState(); // 儲存重設後的狀態
+            } else {
+                showMessage("請先上傳一個檔案才能重設喔！");
+            }
+        });
+
+        // --- (Req 1) 功能 4: 自動產生摘要 (本地) ---
+
+        /** (Req 2)
+         * 輔助函數：遞迴地獲取文字，並優先排除 .delete 內容
+         * @param {Node} parentNode - 要遍歷的父節點
+         * @returns {string} - 組合後的文字
+         */
+        function getSummaryText(parentNode) {
+            let text = "";
+            parentNode.childNodes.forEach(node => {
+                // 節點類型 3 是純文字節點 (TextNode)
+                if (node.nodeType === 3) {
+                    text += node.textContent;
+                } 
+                // 節點類型 1 是元素節點 (ElementNode)
+                else if (node.nodeType === 1) {
+                    // (Req 2) 優先權：如果節點是 .delete，
+                    // 則完全跳過它和它的所有子節點。
+                    if (node.classList.contains('delete')) {
+                        // 不執行任何操作
+                    } 
+                    // 否則 (e.g., .highlight, .adornment, or other spans)
+                    // 則遞迴
+                    else {
+                        text += getSummaryText(node); // 遞迴
+                    }
+                }
+            });
+            return text;
+        }
+
+        generateSummaryBtn.addEventListener('click', function() {
+            if (!originalText) {
+                showMessage("請先上傳檔案並進行標記！");
+                return;
+            }
+
+            // (Req 2) 使用新的遞迴函數
+            let summaryText = getSummaryText(textContainer);
+            
+            // 放入手動摘要區
+            summaryArea.value = summaryText.replace(/\s+/g, ' ').trim();
+            autoGrowTextarea(summaryArea);
+        });
+        
+        // --- (Req 2 & V11) AI 生成功能 (Gemini) ---
+        
+        /**
+         * (Req 2) 帶有重試機制的 fetch
+         */
+        async function retryWithBackoff(apiUrl, payload, retries = 3, delay = 1000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                    if (response.status === 429 || response.status >= 500) {
+                        console.warn(`API request failed with status ${response.status}. Retrying in ${delay / 1000}s...`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        delay *= 2; 
+                    } else {
+                        throw new Error(`API request failed with status ${response.status}`);
+                    }
+                } catch (error) {
+                    if (i === retries - 1) throw error; 
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+            throw new Error('API request failed after all retries.');
+        }
+
+        /**
+         * (Req 2 & V11) 呼叫 Gemini API
+         */
+        aiGenerateBtn.addEventListener('click', async function() {
+            if (!originalText) {
+                showMessage("請先上傳原始段落文字！");
+                return;
+            }
+
+            // (V11) 系統提示詞：要求 AI 專注於縮短簡約
+            const systemPrompt = "你是一個專業的摘要機器人。你的唯一任務是將以下文章縮短，保留核心觀點，產生一段非常簡潔、精煉的摘要。不要加入任何評論、分析或原始文章中未提及的資訊。";
+            
+            // 使用者提示詞：放入文章
+            const userPrompt = `原始文章：\n\n${originalText}`;
+
+            // 設定按鈕狀態
+            aiGenerateBtn.disabled = true;
+            aiGenerateBtn.textContent = "AI 生成中...";
+            aiSummaryArea.value = "AI 正在思考中，請稍候...";
+            autoGrowTextarea(aiSummaryArea);
+
+            try {
+                const apiKey = ""; // API key 會由環境自動提供
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: userPrompt }] }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    generationConfig: {
+                        temperature: 0.3, // 降低溫度，使其更專注於事實
+                        topP: 0.9,
+                        topK: 40
+                    }
+                };
+
+                const result = await retryWithBackoff(apiUrl, payload);
+
+                if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0].text) {
+                    const aiText = result.candidates[0].content.parts[0].text;
+                    aiSummaryArea.value = aiText.trim();
+                } else {
+                    throw new Error("API 回應格式不正確。");
+                }
+
+            } catch (error) {
+                console.error("呼叫 Gemini API 時發生錯誤:", error);
+                showMessage(`AI 生成失敗：${error.message}。請檢查您的網路連線或稍後再試。`);
+                aiSummaryArea.value = "AI 生成失敗，請重試。";
+            } finally {
+                // 恢復按鈕狀態
+                aiGenerateBtn.disabled = false;
+                aiGenerateBtn.textContent = "AI生成";
+                autoGrowTextarea(aiSummaryArea);
+            }
+        });
+        
+        // 初始設定字體
+        function initializeFontSizes() {
+            updateSingleFontSize(fontControlsOriginal, 'original', 0);
+            updateSingleFontSize(fontControlsManual, 'manual', 0);
+            updateSingleFontSize(fontControlsAi, 'ai', 0);
+        }
+        initializeFontSizes();
+
+    </script>
+</body>
+</html>
